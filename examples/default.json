@@ -1,0 +1,22 @@
+{
+  "format": "synthforest-recipe",
+  "version": 1,
+  "name": "default",
+  "description": "The default forest: no layers, only the background (about 650 trees/ha, default species mix and sizes).",
+  "seed": 42,
+  "window": {
+    "kind": "circle",
+    "center": [0.0, 0.0],
+    "radius": 306.0
+  },
+  "laser_artefacts": true,
+  "background": {
+    "enabled": true,
+    "type": "random",
+    "params": {
+      "density": 650.0
+    },
+    "composition": {}
+  },
+  "layers": []
+}

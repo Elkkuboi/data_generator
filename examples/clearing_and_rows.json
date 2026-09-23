@@ -1,0 +1,164 @@
+{
+  "format": "synthforest-recipe",
+  "version": 1,
+  "name": "clearing_and_rows",
+  "description": "A planted pine stand in rows, a clearing with regeneration along its edge, a thinned area and a brushed trail.",
+  "seed": 42,
+  "window": {
+    "kind": "circle",
+    "center": [0.0, 0.0],
+    "radius": 306.0
+  },
+  "laser_artefacts": true,
+  "background": {
+    "enabled": true,
+    "type": "random",
+    "params": {
+      "density": 650.0
+    },
+    "composition": {}
+  },
+  "layers": [
+    {
+      "id": "L1",
+      "name": "Planted pine",
+      "enabled": true,
+      "visible": true,
+      "mode": "replace",
+      "preset": "managed_rows",
+      "type": "rows",
+      "params": {
+        "angle": 30.0
+      },
+      "composition": {},
+      "shape": {
+        "kind": "rectangle",
+        "center": [120.0, -40.0],
+        "width": 150.0,
+        "height": 90.0
+      }
+    },
+    {
+      "id": "L2",
+      "name": "Clearing",
+      "enabled": true,
+      "visible": true,
+      "type": "clear",
+      "params": {},
+      "shape": {
+        "kind": "circle",
+        "center": [-80.0, 60.0],
+        "radius": 40.0
+      }
+    },
+    {
+      "id": "L3",
+      "name": "Clearing edge regeneration",
+      "enabled": true,
+      "visible": true,
+      "mode": "add",
+      "preset": "seedling_stand",
+      "type": "random",
+      "params": {
+        "density": 1500.0
+      },
+      "composition": {},
+      "shape": {
+        "kind": "corridor",
+        "points": [
+          [-40.0, 60.0],
+          [-40.34, 65.22],
+          [-41.36, 70.35],
+          [-43.04, 75.31],
+          [-45.36, 80.0],
+          [-48.27, 84.35],
+          [-51.72, 88.28],
+          [-55.65, 91.73],
+          [-60.0, 94.64],
+          [-64.69, 96.96],
+          [-69.65, 98.64],
+          [-74.78, 99.66],
+          [-80.0, 100.0],
+          [-85.22, 99.66],
+          [-90.35, 98.64],
+          [-95.31, 96.96],
+          [-100.0, 94.64],
+          [-104.35, 91.73],
+          [-108.28, 88.28],
+          [-111.73, 84.35],
+          [-114.64, 80.0],
+          [-116.96, 75.31],
+          [-118.64, 70.35],
+          [-119.66, 65.22],
+          [-120.0, 60.0],
+          [-119.66, 54.78],
+          [-118.64, 49.65],
+          [-116.96, 44.69],
+          [-114.64, 40.0],
+          [-111.73, 35.65],
+          [-108.28, 31.72],
+          [-104.35, 28.27],
+          [-100.0, 25.36],
+          [-95.31, 23.04],
+          [-90.35, 21.36],
+          [-85.22, 20.34],
+          [-80.0, 20.0],
+          [-74.78, 20.34],
+          [-69.65, 21.36],
+          [-64.69, 23.04],
+          [-60.0, 25.36],
+          [-55.65, 28.27],
+          [-51.72, 31.72],
+          [-48.27, 35.65],
+          [-45.36, 40.0],
+          [-43.04, 44.69],
+          [-41.36, 49.65],
+          [-40.34, 54.78],
+          [-40.0, 60.0]
+        ],
+        "width": 12.0
+      }
+    },
+    {
+      "id": "L4",
+      "name": "Thinned from below",
+      "enabled": true,
+      "visible": true,
+      "type": "thin",
+      "params": {
+        "fraction": 0.6,
+        "dbh_below": 12.0
+      },
+      "shape": {
+        "kind": "polygon",
+        "vertices": [
+          [-220.0, -100.0],
+          [-50.0, -170.0],
+          [-20.0, -20.0],
+          [-190.0, 10.0]
+        ]
+      }
+    },
+    {
+      "id": "L5",
+      "name": "Trail (brush stroke)",
+      "enabled": true,
+      "visible": true,
+      "type": "clear",
+      "params": {},
+      "shape": {
+        "kind": "corridor",
+        "points": [
+          [-310.0, -10.0],
+          [-200.0, 12.0],
+          [-100.0, 20.0],
+          [0.0, -5.0],
+          [100.0, 25.0],
+          [200.0, 40.0],
+          [310.0, 30.0]
+        ],
+        "width": 4.0
+      }
+    }
+  ]
+}

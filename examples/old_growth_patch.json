@@ -1,0 +1,132 @@
+{
+  "format": "synthforest-recipe",
+  "version": 1,
+  "name": "old_growth_patch",
+  "description": "An old-growth patch with understorey spruce and two bark-beetle spots inside an ordinary managed forest.",
+  "seed": 42,
+  "window": {
+    "kind": "circle",
+    "center": [0.0, 0.0],
+    "radius": 306.0
+  },
+  "laser_artefacts": true,
+  "background": {
+    "enabled": true,
+    "type": "random",
+    "params": {
+      "density": 650.0
+    },
+    "composition": {}
+  },
+  "layers": [
+    {
+      "id": "L1",
+      "name": "Old growth",
+      "enabled": true,
+      "visible": true,
+      "mode": "replace",
+      "preset": "old_growth",
+      "type": "clustered",
+      "params": {},
+      "composition": {},
+      "shape": {
+        "kind": "polygon",
+        "vertices": [
+          [-150.0, -40.0],
+          [-40.0, -140.0],
+          [90.0, -110.0],
+          [140.0, 20.0],
+          [60.0, 130.0],
+          [-90.0, 110.0]
+        ]
+      }
+    },
+    {
+      "id": "L2",
+      "name": "Understorey",
+      "enabled": true,
+      "visible": true,
+      "mode": "add",
+      "type": "clustered",
+      "params": {
+        "cluster_density": 25.0,
+        "trees_per_cluster": 10.0,
+        "cluster_radius": 4.0
+      },
+      "composition": {
+        "species": {
+          "pine": 0.05,
+          "spruce": 0.75,
+          "broadleaved": 0.2
+        },
+        "size_class": "young",
+        "dead_share": 0.01
+      },
+      "shape": {
+        "kind": "polygon",
+        "vertices": [
+          [-150.0, -40.0],
+          [-40.0, -140.0],
+          [90.0, -110.0],
+          [140.0, 20.0],
+          [60.0, 130.0],
+          [-90.0, 110.0]
+        ]
+      }
+    },
+    {
+      "id": "L3",
+      "name": "Beetle spot 1",
+      "enabled": true,
+      "visible": true,
+      "mode": "replace",
+      "type": "clustered",
+      "params": {
+        "cluster_density": 40.0,
+        "trees_per_cluster": 12.0,
+        "cluster_radius": 4.0
+      },
+      "composition": {
+        "species": {
+          "pine": 0.05,
+          "spruce": 0.9,
+          "broadleaved": 0.05
+        },
+        "size_class": "mature",
+        "dead_share": 0.7
+      },
+      "shape": {
+        "kind": "circle",
+        "center": [20.0, 40.0],
+        "radius": 18.0
+      }
+    },
+    {
+      "id": "L4",
+      "name": "Beetle spot 2",
+      "enabled": true,
+      "visible": true,
+      "mode": "replace",
+      "type": "clustered",
+      "params": {
+        "cluster_density": 40.0,
+        "trees_per_cluster": 12.0,
+        "cluster_radius": 4.0
+      },
+      "composition": {
+        "species": {
+          "pine": 0.05,
+          "spruce": 0.9,
+          "broadleaved": 0.05
+        },
+        "size_class": "mature",
+        "dead_share": 0.7
+      },
+      "shape": {
+        "kind": "circle",
+        "center": [45.0, 10.0],
+        "radius": 12.0
+      }
+    }
+  ]
+}
