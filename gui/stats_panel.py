@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from engine.patterns import pattern_functions
 from engine.report import forest_report, format_report
 
+from . import fonts
 from .figures import SPECIES_COLOURS, SPECIES_NAMES
 
 MIN_TREES_FOR_PATTERNS = 10
@@ -29,7 +30,7 @@ class StatsPanel:
         self._dirty = set()
 
         self.report_tab = ttk.Frame(notebook)
-        self.report_text = tk.Text(self.report_tab, wrap="none", font=("TkFixedFont", 9),
+        self.report_text = tk.Text(self.report_tab, wrap="none", font=fonts.get("fixed"),
                                    height=30, width=58, borderwidth=0)
         scroll = ttk.Scrollbar(self.report_tab, command=self.report_text.yview)
         self.report_text.configure(yscrollcommand=scroll.set, state="disabled")

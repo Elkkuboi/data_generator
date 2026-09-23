@@ -109,11 +109,13 @@ def output_paths(base):
     }
 
 
-def write_forest(forest, base, formats=("csv",), report_text=None):
+def write_forest(forest, base, formats=("csv",), report_text=None, truth=True, recipe=True):
     """Write the tree table in ``formats`` plus truth, recipe copy and report.
 
-    Returns the list of written paths.  Image formats are handled by the
-    caller (the engine does not import matplotlib).
+    The truth file and recipe copy are written unless switched off; the
+    report only when ``report_text`` is given.  Returns the list of written
+    paths.  Image formats are handled by the caller (the engine does not
+    import matplotlib).
     """
     folder = os.path.dirname(os.path.abspath(base))
     os.makedirs(folder, exist_ok=True)
@@ -127,9 +129,12 @@ def write_forest(forest, base, formats=("csv",), report_text=None):
         else:
             raise ValueError(f"unknown table format {fmt!r}")
         written.append(paths[fmt])
-    write_truth(forest.truth, paths["truth"])
-    atomic_write_text(paths["recipe"], recipe_to_json(forest.recipe))
-    written += [paths["truth"], paths["recipe"]]
+    if truth:
+        write_truth(forest.truth, paths["truth"])
+        written.append(paths["truth"])
+    if recipe:
+        atomic_write_text(paths["recipe"], recipe_to_json(forest.recipe))
+        written.append(paths["recipe"])
     if report_text is not None:
         atomic_write_text(paths["report"], report_text)
         written.append(paths["report"])

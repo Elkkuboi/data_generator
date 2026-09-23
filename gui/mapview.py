@@ -28,7 +28,7 @@ PICK_TOLERANCE_PX = 10
 class MapView:
     """Map widget: window outline, trees, layer overlays, selection and events."""
 
-    def __init__(self, parent, on_tree_selected=None, on_view_changed=None):
+    def __init__(self, parent, on_tree_selected=None, on_view_changed=None, on_error=None):
         self.frame = ttk.Frame(parent)
         self.on_tree_selected = on_tree_selected
         self.on_view_changed = on_view_changed
@@ -72,6 +72,10 @@ class MapView:
         self.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.canvas.mpl_connect("key_press_event", self._on_key)
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
+        if on_error is not None:
+            # matplotlib would only print errors in event handlers; show them instead
+            self.canvas.callbacks.exception_handler = on_error
+            self.ax.callbacks.exception_handler = on_error
 
     # ------------------------------------------------------------------
     # Data
@@ -211,6 +215,7 @@ class MapView:
         for artist in self._overlays:
             artist.remove()
         self._overlays = []
+        self._highlighted = []
         for geom, colour, highlighted in items:
             fill = figures.geometry_patch(geom, facecolor=colour, edgecolor="none",
                                           alpha=0.28 if highlighted else 0.12, zorder=1)
@@ -221,7 +226,13 @@ class MapView:
                 if artist is not None:
                     self.ax.add_patch(artist)
                     self._overlays.append(artist)
+                    if highlighted:
+                        self._highlighted.append(artist)
         self.canvas.draw_idle()
+
+    def selected_overlay_artists(self):
+        """Patches of the highlighted layer (moved while dragging)."""
+        return list(getattr(self, "_highlighted", []))
 
     # ------------------------------------------------------------------
     # Selection and events
