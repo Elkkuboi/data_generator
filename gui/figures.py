@@ -64,6 +64,31 @@ def tree_colours(trees, colour_by="species", truth=None):
     return rgba, legend
 
 
+def filter_mask(trees, dbh_min=None, dbh_max=None, species=None, status=None, types=None):
+    """Boolean mask of trees passing the viewer filter.
+
+    ``species``, ``status`` and ``types`` are sets of allowed values (None =
+    all); species codes other than "1", "2", "3" count as "other".  Trees
+    with unknown dbh pass the dbh range.
+    """
+    mask = np.ones(len(trees), dtype=bool)
+    dbh = trees["DBH"].to_numpy(dtype=float)
+    known = np.isfinite(dbh)
+    if dbh_min is not None:
+        mask &= ~known | (dbh >= dbh_min)
+    if dbh_max is not None:
+        mask &= ~known | (dbh <= dbh_max)
+    if species is not None:
+        codes = trees["Species"].astype(str).to_numpy()
+        codes = np.where(np.isin(codes, list(SPECIES_NAMES)), codes, "other")
+        mask &= np.isin(codes, list(species))
+    if status is not None:
+        mask &= np.isin(trees["Status"].astype(str).to_numpy(), list(status))
+    if types is not None:
+        mask &= np.isin(trees["Type"].astype(str).to_numpy(), list(types))
+    return mask
+
+
 def marker_diameters_m(trees, size_by="dbh"):
     """Marker diameter of every tree in metres (before zoom scaling)."""
     dbh = trees["DBH"].to_numpy(dtype=float)
@@ -90,6 +115,7 @@ def marker_sizes(diameters_m, points_per_metre):
 
 def points_per_metre(ax):
     """How many typographic points one metre spans in the axes' current view."""
+    ax.apply_aspect()           # equal aspect shrinks the axes box; measure the real one
     bbox = ax.get_window_extent()
     x0, x1 = ax.get_xlim()
     dpi = ax.figure.dpi

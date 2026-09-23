@@ -5,8 +5,8 @@ treemaps in the same format as the laser-scanning-derived treemaps of the
 forest recreation research project, so the same analysis code runs on
 synthetic and real data.
 
-Work in progress: milestone 1 (engine, command line, tests) is done; the
-viewer and the painting editor follow.
+Work in progress: the engine, command line, tests and the viewer
+(`python synthforest.py view forest.rds`) are done; the painting editor follows.
 
 ```
 pip install -r requirements.txt
