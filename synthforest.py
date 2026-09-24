@@ -5,6 +5,7 @@
     python synthforest.py generate recipe.json --seed 42 --out forest --formats csv,rds,png
     python synthforest.py report forest.csv
     python synthforest.py view forest.rds
+    python synthforest.py edit real_treemap.rds                # paint layers on a tree file
     python synthforest.py example mosaic_with_trail > my_recipe.json
     python synthforest.py validate recipe.json
 """
@@ -78,7 +79,8 @@ def cmd_generate(args):
         raise UsageError(f"unknown format(s): {', '.join(unknown)}; choose from "
                          + ", ".join(TABLE_FORMATS + IMAGE_FORMATS))
     recipe = load_recipe(args.recipe)
-    forest = generate(recipe, seed=args.seed)
+    forest = generate(recipe, seed=args.seed,
+                      base_dir=os.path.dirname(os.path.abspath(args.recipe)))
     base = args.out or forest.recipe["name"]
     rep = forest_report(forest.trees, forest.window, window_description(forest.recipe["window"]))
     title = f"{os.path.basename(base)} (recipe {forest.recipe['name']}, seed {forest.recipe['seed']})"
@@ -105,10 +107,11 @@ def cmd_generate(args):
 
 def cmd_report(args):
     from engine.io import read_trees, window_for_trees
-    from engine.report import forest_report, format_report
+    from engine.report import forest_report, format_report, window_description
 
     trees = read_trees(args.file)
-    window, note, _ = window_for_trees(args.file, trees)
+    window, spec, origin, _ = window_for_trees(args.file, trees)
+    note = f"{window_description(spec)} ({origin})"
     print(format_report(forest_report(trees, window, note),
                         title=f"Report for {os.path.basename(args.file)}"))
     return 0
@@ -138,7 +141,13 @@ def cmd_view(args):
     return run_gui(view_file=args.file)
 
 
-def run_gui(view_file=None, recipe_file=None):
+def cmd_edit(args):
+    if not os.path.exists(args.file):
+        raise UsageError(f"{args.file}: file not found.")
+    return run_gui(edit_file=args.file)
+
+
+def run_gui(view_file=None, recipe_file=None, edit_file=None):
     """Start the graphical interface."""
     try:
         importlib.import_module("tkinter")
@@ -148,7 +157,7 @@ def run_gui(view_file=None, recipe_file=None):
                  "  Debian/Ubuntu: sudo apt install python3-tk\n"
                  "The command line works without it: python synthforest.py --help")
     from gui.app import main as gui_main
-    return gui_main(view_file=view_file, recipe_file=recipe_file)
+    return gui_main(view_file=view_file, recipe_file=recipe_file, edit_file=edit_file)
 
 
 class UsageError(Exception):
@@ -179,6 +188,10 @@ def build_parser():
     p = sub.add_parser("view", help="open a CSV or RDS tree file in the viewer")
     p.add_argument("file")
     p.set_defaults(func=cmd_view)
+
+    p = sub.add_parser("edit", help="open a CSV or RDS tree file in the editor to paint on it")
+    p.add_argument("file")
+    p.set_defaults(func=cmd_edit)
 
     p = sub.add_parser("example", help="print an example recipe (no name: list them)")
     p.add_argument("name", nargs="?")

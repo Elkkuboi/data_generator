@@ -52,7 +52,7 @@ TOP_KEYS = ("format", "version", "name", "description", "seed", "window",
             "laser_artefacts", "background", "layers")
 LAYER_KEYS = ("id", "name", "enabled", "visible", "type", "mode", "preset",
               "shape", "params", "composition")
-BACKGROUND_KEYS = ("enabled", "type", "preset", "params", "composition")
+BACKGROUND_KEYS = ("enabled", "type", "preset", "params", "composition", "file")
 COMPOSITION_KEYS = ("species", "size_class", "dbh", "dead_share")
 
 # (minimum, maximum, unit) of every numeric parameter.
@@ -401,11 +401,35 @@ def _background(c, background):
     out = {}
     value = c.boolean(where, "enabled", background.get("enabled", True))
     out["enabled"] = True if value is None else value
+    if "file" in background:
+        return _file_background(c, where, background, out)
     pattern = _pattern_part(c, where, background, ADDING_TYPES)
     if pattern is None:
         return None
     out.update(pattern)
     return out
+
+
+def _file_background(c, where, background, out):
+    """A background of trees read from a CSV or RDS file (the file is read at generation)."""
+    path = background["file"]
+    if not isinstance(path, str) or not path.strip():
+        c.error(where, "file", f"must be the path of a CSV or RDS tree file, got {path!r}.")
+        return None
+    if not path.lower().endswith((".csv", ".txt", ".rds")):
+        c.error(where, "file", f"{path!r} is not a .csv or .rds file.")
+        return None
+    for key in ("type", "preset", "params", "composition"):
+        if key in background:
+            c.error(where, key, "not used when the background comes from a file.",
+                    f"remove \"{key}\", or remove \"file\" to generate the background.")
+    out["file"] = path
+    return out
+
+
+def is_file_background(background):
+    """True if the (validated) background is read from a tree file."""
+    return "file" in background
 
 
 def validate_recipe(recipe):
@@ -457,7 +481,7 @@ def validate_recipe(recipe):
             out["layers"].append(norm)
     if c.errors:
         raise RecipeError(c.errors)
-    if out["background"]["enabled"]:
+    if out["background"]["enabled"] and not is_file_background(out["background"]):
         _check_resolved(c, "background", out["background"])
     for i, layer in enumerate(out["layers"]):
         _check_resolved(c, _layer_where(i, layer), layer)
@@ -495,7 +519,7 @@ def _check_tree_count(c, recipe):
         c.error("window", None, "the window has no area.")
         return
     total, parts = 0.0, []
-    if recipe["background"]["enabled"]:
+    if recipe["background"]["enabled"] and not is_file_background(recipe["background"]):
         n = expected_trees(recipe["background"], window)
         total += n
         parts.append((n, "background"))

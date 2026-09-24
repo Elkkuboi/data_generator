@@ -127,11 +127,17 @@ def format_report(rep, title="synthforest realism report"):
     return "\n".join(lines)
 
 
-def window_description(spec):
-    """Short text describing a window spec."""
+def _num(value):
+    return f"{value:,.2f}".rstrip("0").rstrip(".").replace(",", " ")
+
+
+def window_description(spec, hide_centre=False):
+    """Short text describing a window spec; ``hide_centre`` leaves out every coordinate."""
     kind = spec["kind"]
+    centre = "" if hide_centre else f", centre ({_num(spec['center'][0])}, {_num(spec['center'][1])})" \
+        if "center" in spec else ""
     if kind == "circle":
-        return f"circle, radius {spec['radius']:g} m, centre ({spec['center'][0]:g}, {spec['center'][1]:g})"
+        return f"circle, radius {_num(spec['radius'])} m{centre}"
     if kind == "rectangle":
-        return f"rectangle {spec['width']:g} x {spec['height']:g} m, centre ({spec['center'][0]:g}, {spec['center'][1]:g})"
+        return f"rectangle {_num(spec['width'])} x {_num(spec['height'])} m{centre}"
     return f"polygon with {len(spec['vertices'])} vertices"

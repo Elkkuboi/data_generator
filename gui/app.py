@@ -34,6 +34,7 @@ from engine.generators import apply_generator
 from engine.geometry import shape_geometry, translate_shape, window_geometry
 from engine.io import (
     TreeFileError,
+    recipe_for_file,
     read_trees,
     read_truth,
     sidecar_paths,
@@ -47,6 +48,7 @@ from engine.recipe import (
     atomic_write_text,
     load_recipe,
     new_recipe,
+    is_file_background,
     next_layer_id,
     recipe_to_json,
     save_recipe,
@@ -129,7 +131,7 @@ class ScrollableFrame(ttk.Frame):
 class App:
     """The synthforest main window."""
 
-    def __init__(self, root, view_file=None, recipe_file=None, check_recovery=True):
+    def __init__(self, root, view_file=None, recipe_file=None, edit_file=None, check_recovery=True):
         self.root = root
         self.mode = "editor"
         self.recipe = new_recipe()
@@ -162,6 +164,8 @@ class App:
 
         if view_file:
             root.after(50, lambda: self.open_tree_file(view_file))
+        elif edit_file:
+            root.after(50, lambda: self.edit_tree_file(edit_file))
         elif recipe_file:
             root.after(50, lambda: self.open_recipe(recipe_file))
         else:
@@ -244,6 +248,7 @@ class App:
         separator()
         button("export", "Export…", self.export)
         button("open_file", "Open file…", self.open_tree_file)
+        button("edit_file", "Edit this file", self.edit_tree_file)
         button("settings", "Settings…", self.settings)
 
     def _section(self, parent, title):
@@ -492,6 +497,7 @@ class App:
             self.main_buttons[key].configure(state="normal" if editing else "disabled")
         self.seed_entry.configure(state="normal" if editing else "disabled")
         self.draft_check.configure(state="normal" if editing else "disabled")
+        self.main_buttons["edit_file"].configure(state="disabled" if editing else "normal")
         if editing:
             if not self.editor_left.winfo_ismapped():
                 self.editor_left.pack(fill=tk.X, before=self.viewer_left)
@@ -518,8 +524,16 @@ class App:
     def _ensure_editor(self):
         if self.mode != "editor":
             self._set_mode("editor")
-            self.hide_var.set(False)
-            self._on_hide()
+            self._default_hide()
+
+    def _default_hide(self):
+        """Hide coordinates by default when the recipe paints on a tree file (maybe real data)."""
+        self.hide_var.set(is_file_background(self.recipe["background"]))
+        self._on_hide()
+
+    def recipe_dir(self):
+        """Folder that relative background file paths are taken from."""
+        return os.path.dirname(os.path.abspath(self.recipe_path)) if self.recipe_path else None
 
     # ------------------------------------------------------------------
     # Recipe editing, undo and redo
@@ -601,6 +615,7 @@ class App:
         self.selected_id = None
         self.seed_var.set(str(recipe["seed"]))
         self._ensure_editor()
+        self._default_hide()
         self.layers.refresh()
         self.update_overlays()
         self._update_undo_buttons()
@@ -862,19 +877,20 @@ class App:
             seed = self.recipe["seed"]
         if scale is None:
             scale = DRAFT_SCALE if self.draft_var.get() else 1.0
-        self._gen_request = (copy.deepcopy(self.recipe), seed, scale)
+        self._gen_request = (copy.deepcopy(self.recipe), seed, scale, self.recipe_dir())
         self._fit_after_generation = self._fit_after_generation or fit
         if self._gen_thread is None:
             self._start_generation()
 
     def _start_generation(self):
-        recipe, seed, scale = self._gen_request
+        recipe, seed, scale, base_dir = self._gen_request
         self._gen_request = None
         self.set_status(f"Generating{' draft' if scale < 1 else ''} …")
 
         def work():
             try:
-                self._gen_result = ("ok", generate(recipe, seed=seed, density_scale=scale), scale)
+                self._gen_result = ("ok", generate(recipe, seed=seed, density_scale=scale,
+                                                   base_dir=base_dir), scale)
             except RecipeError as exc:
                 self._gen_result = ("recipe", exc, scale)
             except Exception:              # reported on the main thread
@@ -914,17 +930,17 @@ class App:
             self.status_extra += " · " + "; ".join(forest.warnings)
         fit, self._fit_after_generation = self._fit_after_generation, False
         self.show(forest.trees, forest.window, forest.truth,
-                  note=window_description(forest.recipe["window"]), source=self.recipe["name"],
+                  window_spec=forest.recipe["window"], source=self.recipe["name"],
                   fit=fit or self.shown is None)
 
     # ------------------------------------------------------------------
     # Showing data, filter, statistics
     # ------------------------------------------------------------------
 
-    def show(self, trees, window, truth=None, note="", source="", fit=False):
+    def show(self, trees, window, truth=None, window_spec=None, origin="", source="", fit=False):
         """Display a tree table (generated or read from a file)."""
-        self.shown = SimpleNamespace(trees=trees, truth=truth, window=window, note=note,
-                                     source=source)
+        self.shown = SimpleNamespace(trees=trees, truth=truth, window=window,
+                                     window_spec=window_spec, origin=origin, source=source)
         self.map.set_forest(trees, window, truth, fit=fit)
         if self.colour_var.get() == "layer" and truth is None:
             self.colour_var.set("species")
@@ -1008,7 +1024,7 @@ class App:
         text = f"Scope: {scope}; {len(trees):,} of {len(self.shown.trees):,} trees pass the filter."
         if self.mode == "editor" and self.forest is not None and self.forest.density_scale < 1:
             text += "\nDRAFT at 10 % density: press Generate for the full forest."
-        self.stats.update(trees.reset_index(drop=True), region, self.shown.note, text)
+        self.stats.update(trees.reset_index(drop=True), region, self.window_note(), text)
 
     def update_status(self):
         if self.shown is None:
@@ -1019,7 +1035,7 @@ class App:
         density = n / area if area > 0 else float("nan")
         part = f" ({shown:,} shown)" if shown != n else ""
         prefix = os.path.basename(self.shown.source) if self.mode == "viewer" else self.recipe["name"]
-        self.set_status(f"{prefix}: {n:,} trees{part} · {density:.0f} /ha · {self.shown.note}"
+        self.set_status(f"{prefix}: {n:,} trees{part} · {density:.0f} /ha · {self.window_note()}"
                         f"{self.status_extra}")
 
     def _on_colour(self):
@@ -1031,9 +1047,19 @@ class App:
             return
         self.map.set_colour_by(value)
 
+    def window_note(self):
+        """Window description for the status bar and report; no coordinates when hidden."""
+        if self.shown is None or self.shown.window_spec is None:
+            return ""
+        text = window_description(self.shown.window_spec, hide_centre=self.hide_var.get())
+        return f"{text} ({self.shown.origin})" if self.shown.origin else text
+
     def _on_hide(self):
         self.map.set_hide_coordinates(self.hide_var.get())
         self._show_tree_info(self.selected_tree)
+        if self.shown is not None:
+            self.update_status()
+            self.update_stats()
         if self.mode == "editor":
             self.layers.build_editor()
 
@@ -1085,7 +1111,7 @@ class App:
         self.root.update_idletasks()
         try:
             trees = read_trees(path)
-            window, note, _ = window_for_trees(path, trees)
+            window, spec, origin, _ = window_for_trees(path, trees)
         except TreeFileError as exc:
             self.error("Cannot open the file", str(exc))
             self.update_status()
@@ -1096,18 +1122,43 @@ class App:
         self.hide_var.set(True)                     # external data: coordinates hidden
         self.map.set_hide_coordinates(True)
         self._set_mode("viewer")
-        self.show(trees, window, truth, note=note, source=path, fit=True)
+        self.show(trees, window, truth, window_spec=spec, origin=origin, source=path, fit=True)
         self.update_title()
 
+    def edit_tree_file(self, path=None):
+        """Paint on a tree file: start a new recipe whose background is the file's trees."""
+        if path is None and self.mode == "viewer" and self.shown is not None:
+            path = self.shown.source
+        if path is None:
+            path = filedialog.askopenfilename(
+                parent=self.root, title="Open a tree file to edit",
+                filetypes=[("Tree tables", "*.csv *.rds *.CSV *.RDS"), ("All files", "*.*")])
+            if not path:
+                return
+        if not self._confirm_discard("Edit a tree file"):
+            return
+        try:
+            same = self.shown is not None and self.mode == "viewer" and self.shown.source == path
+            trees = self.shown.trees if same else read_trees(path)
+            recipe = recipe_for_file(path, trees)
+        except (TreeFileError, RecipeError) as exc:
+            self.error("Cannot edit the file", str(exc))
+            return
+        self.recipe_path = None
+        self._load_recipe_state(recipe)
+        self.request_generation(fit=True)
+        self.set_status(f"Editing {os.path.basename(path)}: paint layers on its trees; "
+                        "the file itself is never changed.")
+
     def new_recipe(self):
-        if self.mode == "editor" and not self._confirm_discard("New recipe"):
+        if not self._confirm_discard("New recipe"):
             return
         self.recipe_path = None
         self._load_recipe_state(new_recipe())
         self.request_generation(fit=True)
 
     def open_recipe(self, path=None):
-        if self.mode == "editor" and not self._confirm_discard("Open recipe"):
+        if not self._confirm_discard("Open recipe"):
             return
         if path is None:
             path = filedialog.askopenfilename(parent=self.root, title="Open a recipe",
@@ -1166,7 +1217,7 @@ class App:
         self.set_status("Generating the full forest for export …")
         self.root.update_idletasks()
         try:
-            forest = generate(self.recipe, seed=seed)
+            forest = generate(self.recipe, seed=seed, base_dir=self.recipe_dir())
         except RecipeError as exc:
             self.error("The recipe has problems", "\n\n".join(exc.errors))
             return
@@ -1178,7 +1229,8 @@ class App:
             if options["report"]:
                 report = format_report(
                     forest_report(forest.trees, forest.window,
-                                  window_description(forest.recipe["window"])),
+                                  window_description(forest.recipe["window"],
+                                                     hide_centre=self.hide_var.get())),
                     title=f"{os.path.basename(base)} (seed {forest.recipe['seed']})")
             written = write_forest(forest, base, tables, report_text=report,
                                    truth=options["truth"], recipe=options["recipe"])
@@ -1220,10 +1272,10 @@ class App:
                 self._fit_after_generation = True
                 self.request_generation(fit=True)
             return ok
-        SettingsDialog(self.root, self.recipe, apply)
+        SettingsDialog(self.root, self.recipe, apply, hide_coordinates=self.hide_var.get())
 
 
-def main(view_file=None, recipe_file=None):
+def main(view_file=None, recipe_file=None, edit_file=None):
     """Create the window and run the event loop."""
     if sys.platform.startswith("win"):
         try:
@@ -1232,6 +1284,6 @@ def main(view_file=None, recipe_file=None):
         except Exception:        # older Windows: keep default scaling
             pass
     root = tk.Tk()
-    App(root, view_file=view_file, recipe_file=recipe_file)
+    App(root, view_file=view_file, recipe_file=recipe_file, edit_file=edit_file)
     root.mainloop()
     return 0

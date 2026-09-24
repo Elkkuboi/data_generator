@@ -51,6 +51,24 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("OK", out)
 
+    def test_generate_on_a_tree_file(self):
+        base = os.path.join(self.tmp, "plot")
+        code, _, err = run("generate", os.path.join(EXAMPLES_DIR, "default.json"), "--out", base)
+        self.assertEqual(code, 0, err)
+        recipe = os.path.join(self.tmp, "edit.json")
+        with open(recipe, "w") as fh:
+            json.dump({"name": "edited", "background": {"file": "plot.csv"},
+                       "layers": [{"type": "clear", "shape": {"kind": "circle", "center": [0, 0],
+                                                              "radius": 100}}]}, fh)
+        code, out, err = run("generate", recipe, "--out", os.path.join(self.tmp, "edited"))
+        self.assertEqual(code, 0, err)
+        with open(os.path.join(self.tmp, "edited-recipe.json")) as fh:
+            copy = json.load(fh)
+        self.assertEqual(copy["background"]["file"], os.path.abspath(base + ".csv"))
+        code, _, err = run("edit", os.path.join(self.tmp, "missing.csv"))
+        self.assertEqual(code, 2)
+        self.assertIn("not found", err)
+
     def test_errors_are_messages_not_tracebacks(self):
         bad = os.path.join(self.tmp, "bad.json")
         with open(bad, "w") as fh:

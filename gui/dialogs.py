@@ -4,6 +4,8 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+import shapely.geometry
+
 from . import fonts
 
 
@@ -153,15 +155,26 @@ def ask_export(parent, default_base, hide_coordinates):
 
 
 class SettingsDialog(tk.Toplevel):
-    """Recipe-wide settings: name, window shape and size, laser artefacts, background."""
+    """Recipe-wide settings: name, window shape and size, laser artefacts, background.
 
-    def __init__(self, parent, recipe, on_apply):
+    With ``hide_coordinates`` the window's centre and vertices are not shown
+    and are kept as they are; only sizes can be changed.
+    """
+
+    def __init__(self, parent, recipe, on_apply, hide_coordinates=False):
         super().__init__(parent)
         self.title("Settings")
         self.transient(parent)
         self.resizable(False, False)
         self.on_apply = on_apply
         window = recipe["window"]
+        self.original_window = window
+        self.hidden = hide_coordinates
+        if "center" in window:
+            self.hidden_centre = list(window["center"])
+        else:
+            c = shapely.geometry.Polygon(window["vertices"]).centroid
+            self.hidden_centre = [round(c.x, 2), round(c.y, 2)]
         body = ttk.Frame(self, padding=12)
         body.pack(fill=tk.BOTH, expand=True)
         self.name_var = tk.StringVar(value=recipe["name"])
@@ -175,9 +188,10 @@ class SettingsDialog(tk.Toplevel):
                             state="readonly", width=12)
         kind.grid(row=1, column=1, sticky="w", pady=(10, 2))
         kind.bind("<<ComboboxSelected>>", lambda e: self._show_kind())
-        centre = window.get("center", [0.0, 0.0])
+        centre = window.get("center", self.hidden_centre)
+        shown = ("hidden", "hidden") if self.hidden else (f"{centre[0]:.2f}", f"{centre[1]:.2f}")
         self.values = {
-            "cx": tk.StringVar(value=f"{centre[0]:g}"), "cy": tk.StringVar(value=f"{centre[1]:g}"),
+            "cx": tk.StringVar(value=shown[0]), "cy": tk.StringVar(value=shown[1]),
             "radius": tk.StringVar(value=f"{window.get('radius', 306.0):g}"),
             "width": tk.StringVar(value=f"{window.get('width', 600.0):g}"),
             "height": tk.StringVar(value=f"{window.get('height', 600.0):g}"),
@@ -189,15 +203,25 @@ class SettingsDialog(tk.Toplevel):
             frame = ttk.Frame(body)
             for i, (label, var) in enumerate(rows):
                 ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w")
-                ttk.Entry(frame, textvariable=self.values[var], width=12).grid(row=i, column=1, sticky="w")
+                locked = self.hidden and var in ("cx", "cy")
+                ttk.Entry(frame, textvariable=self.values[var], width=14,
+                          state="disabled" if locked else "normal").grid(row=i, column=1, sticky="w")
             self.frames[key] = frame
         frame = ttk.Frame(body)
-        ttk.Label(frame, text="Vertices, one \"x y\" pair per line (m):").pack(anchor="w")
         self.vertices = tk.Text(frame, width=30, height=8)
-        self.vertices.pack(fill=tk.X)
-        default_vertices = window.get("vertices") or [[-300, -300], [300, -300], [300, 300], [-300, 300]]
-        self.vertices.insert("1.0", "\n".join(f"{x:g} {y:g}" for x, y in default_vertices))
+        if self.hidden:
+            ttk.Label(frame, wraplength=320, foreground="#444444", text=(
+                "Coordinates are hidden, so the vertices are not shown. An existing polygon "
+                "window is kept; untick Hide coordinates to type new vertices.")).pack(anchor="w")
+        else:
+            ttk.Label(frame, text="Vertices, one \"x y\" pair per line (m):").pack(anchor="w")
+            self.vertices.pack(fill=tk.X)
+            default_vertices = window.get("vertices") or [[-300, -300], [300, -300], [300, 300], [-300, 300]]
+            self.vertices.insert("1.0", "\n".join(f"{x:.2f} {y:.2f}" for x, y in default_vertices))
         self.frames["polygon"] = frame
+        if self.hidden:
+            ttk.Label(body, text="Coordinates are hidden: the window keeps its centre.",
+                      foreground="#444444").grid(row=6, column=0, columnspan=4, sticky="w", pady=(6, 0))
         self._frame_row = 2
 
         self.laser_var = tk.BooleanVar(value=recipe["laser_artefacts"])
@@ -221,6 +245,8 @@ class SettingsDialog(tk.Toplevel):
         self.frames[self.kind_var.get()].grid(row=self._frame_row, column=0, columnspan=4, sticky="w")
 
     def _number(self, key):
+        if self.hidden and key in ("cx", "cy"):
+            return float(self.hidden_centre[0 if key == "cx" else 1])
         return float(self.values[key].get().strip().replace(",", "."))
 
     def _window(self):
@@ -231,6 +257,10 @@ class SettingsDialog(tk.Toplevel):
         if kind == "rectangle":
             return {"kind": "rectangle", "center": [self._number("cx"), self._number("cy")],
                     "width": self._number("width"), "height": self._number("height")}
+        if self.hidden:
+            if self.original_window["kind"] != "polygon":
+                raise ValueError("untick Hide coordinates to enter the vertices of a polygon")
+            return dict(self.original_window)
         vertices = []
         for line in self.vertices.get("1.0", tk.END).splitlines():
             parts = line.replace(",", " ").split()

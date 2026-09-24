@@ -9,8 +9,10 @@ research project at the Natural Resources Institute Finland. The same
 analysis code runs on synthetic and real data, and synthetic data can be
 shared freely.
 
-The tool also opens existing CSV and RDS treemaps for viewing. Everything
-runs locally; the program makes no network connections.
+The tool also opens existing CSV and RDS treemaps, synthetic or real, for
+viewing and for editing: paint clearings, thinnings, trails or new stands
+on top of their trees. Everything runs locally; the program makes no
+network connections.
 
 ![synthforest editor](docs/screenshot.png)
 
@@ -35,6 +37,7 @@ python synthforest.py                                        # GUI (painting edi
 python synthforest.py generate recipe.json --seed 42 --out forest --formats csv,rds,png
 python synthforest.py report forest.csv                      # realism report of a CSV or RDS file
 python synthforest.py view forest.rds                        # open a file in the viewer
+python synthforest.py edit treemap.rds                       # paint layers on a file's trees
 python synthforest.py example mosaic_with_trail > my_recipe.json
 python synthforest.py example                                # list the examples
 python synthforest.py validate recipe.json                   # list every problem in a recipe
@@ -81,13 +84,15 @@ writes `NAME-truth.csv`, `NAME-recipe.json` and `NAME-report.txt` too.
 **Viewer** (*Open file…* or `python synthforest.py view FILE`)
 
 * It opens CSV or RDS files in the output format, synthetic or real. If a
-  `NAME-recipe.json` sits next to the file, its window is used; otherwise
-  the window is the convex hull of the trees. A `NAME-truth.csv` next to
-  the file enables *colour by layer*.
+  `NAME-recipe.json` sits next to the file, its window is used; otherwise a
+  window is fitted to the trees (see [Editing tree files](#editing-tree-files)).
+  A `NAME-truth.csv` next to the file enables *colour by layer*.
 * **Hide coordinates is on by default for opened files.** Real inventory
-  coordinates are confidential and screenshots travel. Hiding removes the
-  axis ticks, the cursor coordinates and X/Y in the tree panel. Exported
-  images respect it; a scale bar stays.
+  coordinates are confidential and screenshots travel. Hiding removes every
+  coordinate from the screen: axis ticks, cursor position, X/Y in the tree
+  panel, and the window centre in the status bar, report, layer editor and
+  Settings. Exported images respect it; a scale bar stays.
+* **Edit this file** opens the file in the painting editor (next section).
 * **Map view:**
   * *Colour by* species, status, type or layer.
   * *Size by* a fixed size, dbh or crown diameter. Markers keep their true
@@ -103,6 +108,44 @@ writes `NAME-truth.csv`, `NAME-recipe.json` and `NAME-report.txt` too.
     reference. These curves are not edge-corrected.
   * Tick *Statistics for current view only* to restrict the statistics to
     the zoomed area.
+
+## Editing tree files
+
+An imported CSV or RDS file can be edited with the same tools as a
+generated forest. *Edit this file* in the viewer (or
+`python synthforest.py edit FILE`, or *Use trees from a file instead…* on
+the Background row of the Layers tab) starts a recipe whose **background is
+the file's trees**:
+
+```json
+{"name": "plot_edited", "window": {"kind": "circle", "center": [385000.02, 6699999.99], "radius": 306.52},
+ "background": {"file": "C:/data/plot.rds"},
+ "layers": [{"type": "clear", "shape": {"kind": "corridor", "points": [[384700, 6699980], [385300, 6700010]], "width": 6}}]}
+```
+
+* **The file is only read, never changed.** Its trees keep every value
+  exactly as read: species codes, NA values and duplicates stay as they
+  are. Layers act on them as on any earlier trees:
+  * `clear` (Eraser) and `thin` remove them;
+  * adding layers in `replace` mode remove them from their shape before
+    adding new trees;
+  * `add` mode adds new trees among them.
+* **Laser lattice:** new ITD trees are placed on the file's 0.5 m laser
+  lattice when its ITD trees lie on one.
+* **Truth file:** the file's trees are marked `layer_id` `background`,
+  `layer_type` `file`.
+* **Window:** it comes from the file's `NAME-recipe.json` if there is one.
+  Otherwise it is fitted to the trees: the smallest enclosing circle (plus
+  0.5 m) if the trees fill it (convex hull ≥ 90 % of the circle, as in
+  circular treemaps), else the convex hull widened by 1.5 m. Change it in
+  *Settings*. Trees outside the window are left out, with a warning.
+* **Coordinates stay hidden** while you edit a file. The painting tools
+  work without coordinates on screen.
+* **Draft mode** shows a random 10 % of the file's trees, like the other
+  layers.
+* **File paths:** a relative `file` path is taken from the recipe's
+  folder. Exported recipe copies store the absolute path, so they
+  reproduce the forest exactly.
 
 ## Recipe format
 
@@ -147,7 +190,7 @@ error names the layer and the key.
 | `seed` | `1` | random seed (whole number ≥ 0) |
 | `window` | circle, radius 306 m, centre (0, 0) | the area; every tree lies inside it |
 | `laser_artefacts` | `true` | imitate airborne laser scanning (see below) |
-| `background` | random, 650 trees/ha, default composition | the base forest over the whole window; `null` or `"enabled": false` gives bare ground |
+| `background` | random, 650 trees/ha, default composition | the base forest over the whole window, with the keys `type`, `preset`, `params` and `composition` like an adding layer, or `{"file": "trees.csv"}` for the trees of a CSV or RDS file (see [Editing tree files](#editing-tree-files)); `null` or `"enabled": false` gives bare ground |
 | `layers` | `[]` | the layers, applied in order |
 
 ### Window and shapes (metres)
@@ -426,6 +469,9 @@ The suite checks:
 * column order, dtypes and CSV format;
 * the RDS round trip;
 * every example;
+* editing tree files: a file comes through unchanged, layers clear, thin,
+  replace and add on it, new ITD trees join its lattice, and the fitted
+  window contains every tree;
 * a 45 000-tree recipe generating within a few seconds.
 
 If `Rscript` is on the PATH, the RDS file is also read in R, checking

@@ -8,14 +8,16 @@ dialog and the editor falls back to the last valid recipe.
 """
 
 import copy
+import os
 import tkinter as tk
-from tkinter import simpledialog, ttk
+from tkinter import filedialog, simpledialog, ttk
 
 from engine.presets import PRESETS, SIZE_CLASSES, SPECIES
 from engine.recipe import (
     ADDING_TYPES,
     LAYER_TYPES,
     PARAM_RANGES,
+    is_file_background,
     merged_composition,
     merged_params,
     next_layer_id,
@@ -120,8 +122,10 @@ class LayersPanel:
     def _fill_list(self, recipe):
         self.tree.delete(*self.tree.get_children())
         bg = recipe["background"]
+        name = (f"Trees from {os.path.basename(bg['file'])}" if is_file_background(bg)
+                else "Background (whole window)")
         self.tree.insert("", "end", iid=BACKGROUND, values=(
-            CHECK[bg["enabled"]], "", "Background (whole window)", self._type_text(bg)))
+            CHECK[bg["enabled"]], "", name, self._type_text(bg)))
         for layer in recipe["layers"]:
             self.tree.insert("", "end", iid=layer["id"], values=(
                 CHECK[layer["enabled"]], EYE[layer["visible"]], layer["name"], self._type_text(layer)))
@@ -132,6 +136,8 @@ class LayersPanel:
 
     @staticmethod
     def _type_text(layer):
+        if is_file_background(layer):
+            return "file (unchanged)"
         text = layer["type"]
         if layer.get("preset"):
             text = layer["preset"]
@@ -256,6 +262,13 @@ class LayersPanel:
         grid.columnconfigure(1, weight=1)
         self.grid = grid
         is_bg = iid == BACKGROUND
+        if is_bg and is_file_background(layer):
+            self._file_background_editor(layer)
+            return
+        if is_bg:
+            ttk.Button(grid, text="Use trees from a file instead…",
+                       command=self.choose_background_file).grid(
+                row=self._next_row(), column=0, columnspan=3, sticky="w", pady=(0, 6))
         types = ADDING_TYPES if is_bg else LAYER_TYPES
         self._combo("Type", layer["type"], types, lambda v: self._set_type(iid, v))
         if layer["type"] in ADDING_TYPES:
@@ -281,6 +294,45 @@ class LayersPanel:
     def _next_row(self):
         self._row += 1
         return self._row
+
+    # --- background from a file ---------------------------------------
+
+    def _file_background_editor(self, background):
+        self._heading("Trees from a file")
+        path = background["file"]
+        count = self.app.forest.layer_counts.get(BACKGROUND) if self.app.forest else None
+        lines = [os.path.basename(path), os.path.dirname(path)]
+        if count is not None and self.app.forest.density_scale == 1:
+            lines.append(f"{count:,} of its trees are in the forest now.")
+        ttk.Label(self.grid, text="\n".join(lines), wraplength=380).grid(
+            row=self._next_row(), column=0, columnspan=3, sticky="w")
+        ttk.Label(self.grid, foreground="#555555", wraplength=380, text=(
+            "The file is only read, never changed. Its trees keep all their values. "
+            "Layers below can remove them (Eraser, Thin, replace mode) and add new trees "
+            "among them.")).grid(row=self._next_row(), column=0, columnspan=3, sticky="w", pady=4)
+        buttons = ttk.Frame(self.grid)
+        buttons.grid(row=self._next_row(), column=0, columnspan=3, sticky="w", pady=4)
+        ttk.Button(buttons, text="Choose another file…",
+                   command=self.choose_background_file).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(buttons, text="Use a generated background",
+                   command=self.use_generated_background).pack(side=tk.LEFT)
+
+    def choose_background_file(self):
+        path = filedialog.askopenfilename(
+            parent=self.frame, title="Trees for the background",
+            filetypes=[("Tree tables", "*.csv *.rds *.CSV *.RDS"), ("All files", "*.*")])
+        if not path:
+            return
+
+        def mutate(recipe):
+            recipe["background"] = {"enabled": True, "file": os.path.abspath(path)}
+        if self.app.edit(mutate, "Use trees from a file"):
+            self.app._default_hide()
+
+    def use_generated_background(self):
+        def mutate(recipe):
+            recipe["background"] = {"enabled": True, "type": "random", "params": {}, "composition": {}}
+        self.app.edit(mutate, "Use a generated background")
 
     def _heading(self, text):
         ttk.Label(self.grid, text=text, style="Head.TLabel").grid(

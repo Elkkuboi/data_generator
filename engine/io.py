@@ -8,6 +8,7 @@ values are R's ``NA`` (not ``NaN``).
 """
 
 import os
+import threading
 
 import numpy as np
 import pandas as pd
@@ -16,8 +17,7 @@ from shapely.geometry import Polygon
 
 from .generate import COLUMNS, TRUTH_COLUMNS
 from .geometry import window_geometry
-from .recipe import RecipeError, atomic_write_text, load_recipe, recipe_to_json
-from .report import window_description
+from .recipe import RecipeError, atomic_write_text, load_recipe, recipe_to_json, validate_recipe
 
 STRING_COLUMNS = ("Species", "Status", "Type")
 FLOAT_COLUMNS = ("X", "Y", "H", "DBH", "Latvus_h", "Latvus_d", "V")
@@ -235,24 +235,135 @@ def sidecar_paths(tree_path):
     return {"truth": base + "-truth.csv", "recipe": base + "-recipe.json"}
 
 
+def fit_window(trees, margin=0.5):
+    """A window spec that contains every tree, strictly inside.
+
+    If the trees fill their minimum bounding circle well (convex hull at
+    least 90 % of the circle, as in the circular treemaps), the window is
+    that circle; otherwise it is the convex hull widened by 1 m.  A margin
+    keeps trees on the edge inside the window.
+    """
+    xy = np.column_stack([trees["X"].to_numpy(float), trees["Y"].to_numpy(float)])
+    if len(xy) < 3:
+        cx, cy = (xy.mean(axis=0) if len(xy) else (0.0, 0.0))
+        return {"kind": "circle", "center": [round(float(cx), 2), round(float(cy), 2)], "radius": 10.0}
+    points = shapely.multipoints(xy)
+    hull = points.convex_hull
+    circle = shapely.minimum_bounding_circle(points)
+    if isinstance(hull, Polygon) and circle.area > 0 and hull.area / circle.area >= 0.9:
+        centre = circle.centroid
+        cx, cy = round(centre.x, 2), round(centre.y, 2)
+        radius = float(np.max(np.hypot(xy[:, 0] - cx, xy[:, 1] - cy)))
+        # the window circle is drawn as a 256-gon, slightly inside the true circle
+        radius = np.ceil((radius * 1.0001 + margin) * 100) / 100
+        return {"kind": "circle", "center": [cx, cy], "radius": float(radius)}
+    outline = hull.buffer(1.0 + margin, quad_segs=2).simplify(0.25 * margin)
+    vertices = [[round(x, 2), round(y, 2)] for x, y in list(outline.exterior.coords)[:-1]]
+    return {"kind": "polygon", "vertices": vertices}
+
+
 def window_for_trees(tree_path, trees):
     """The area a tree file covers.
 
     Uses the window of a matching ``<name>-recipe.json`` when present,
-    otherwise the convex hull of the trees.  Returns (geometry, description,
-    recipe or None).
+    otherwise a window fitted to the trees (see ``fit_window``).  Returns
+    (geometry, window spec, where it came from, recipe or None).
     """
     recipe_path = sidecar_paths(tree_path)["recipe"]
     if os.path.exists(recipe_path):
         try:
             recipe = load_recipe(recipe_path)
-            return (window_geometry(recipe["window"]),
-                    window_description(recipe["window"]) + " (from the recipe file)", recipe)
+            return (window_geometry(recipe["window"]), recipe["window"],
+                    "from the recipe file", recipe)
         except RecipeError:
             pass
-    points = shapely.multipoints(np.column_stack([trees["X"], trees["Y"]]))
-    hull = points.convex_hull
-    if not isinstance(hull, Polygon) or hull.area <= 0:
-        hull = hull.buffer(1.0)
-    shapely.prepare(hull)
-    return hull, "convex hull of the trees (no recipe file found)", None
+    spec = fit_window(trees)
+    return window_geometry(spec), spec, "fitted to the trees", None
+
+
+# --------------------------------------------------------------------------
+# Tree files as the background of a recipe
+# --------------------------------------------------------------------------
+
+_BASE_CACHE = {}
+_BASE_LOCK = threading.Lock()
+
+
+def resolve_path(path, base_dir=None):
+    """Absolute path of ``path``; relative paths are taken from ``base_dir`` (or the cwd)."""
+    path = os.path.expanduser(path)
+    if not os.path.isabs(path) and base_dir:
+        path = os.path.join(base_dir, path)
+    return os.path.abspath(path)
+
+
+def load_base_trees(path):
+    """Read a tree file used as a background, cached while the file is unchanged.
+
+    Raises RecipeError naming the background's ``file`` key if the file
+    cannot be read.  The returned table must not be modified.
+    """
+    try:
+        stat = os.stat(path)
+    except OSError as exc:
+        raise RecipeError(f'background, key "file": cannot read {path} '
+                          f"({exc.strerror}).") from None
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    with _BASE_LOCK:
+        cached = _BASE_CACHE.get(path)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+    try:
+        table = read_trees(path)
+    except TreeFileError as exc:
+        raise RecipeError(f'background, key "file": {exc}') from None
+    with _BASE_LOCK:
+        if len(_BASE_CACHE) >= 4:
+            _BASE_CACHE.pop(next(iter(_BASE_CACHE)))
+        _BASE_CACHE[path] = (stamp, table)
+    return table
+
+
+def infer_lattice_offset(trees, step=0.5, agreement=0.9):
+    """The offset of the laser lattice of a table's ITD trees, or None.
+
+    Returns (ox, oy) if at least ``agreement`` of the ITD coordinates share
+    the same position modulo ``step`` (rounded to 0.01 m).
+    """
+    itd = (trees["Type"].astype(str) == "ITD").to_numpy()
+    if itd.sum() < 20:
+        return None
+    offset = []
+    for column in ("X", "Y"):
+        cents = np.round(np.mod(trees[column].to_numpy(float)[itd], step) * 100).astype(np.int64)
+        cents %= int(round(step * 100))
+        values, counts = np.unique(cents, return_counts=True)
+        if counts.max() < agreement * itd.sum():
+            return None
+        offset.append(float(values[np.argmax(counts)]) / 100)
+    return tuple(offset)
+
+
+def recipe_for_file(path, trees):
+    """A new recipe whose background is the tree file at ``path`` (for painting on it).
+
+    The window comes from a matching ``<name>-recipe.json`` if there is one,
+    otherwise it is fitted to the trees.
+    """
+    recipe_path = sidecar_paths(path)["recipe"]
+    window, laser = None, True
+    if os.path.exists(recipe_path):
+        try:
+            sidecar = load_recipe(recipe_path)
+            window, laser = sidecar["window"], sidecar["laser_artefacts"]
+        except RecipeError:
+            pass
+    name = os.path.splitext(os.path.basename(path))[0] + "_edited"
+    return validate_recipe({
+        "name": name,
+        "description": f"Trees from {os.path.basename(path)} with painted layers.",
+        "window": window or fit_window(trees),
+        "laser_artefacts": laser,
+        "background": {"file": os.path.abspath(path)},
+        "layers": [],
+    })
